@@ -5,6 +5,7 @@ ARCHITECTURES=amd64 arm64
 all: build
 
 build:
+	go mod tidy
 	go build -o bin/checker src/checker.go src/csvfile.go
 	go build -o bin/csv2xlsx src/csv2xlsx.go
 
