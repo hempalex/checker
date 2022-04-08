@@ -1,0 +1,52 @@
+#!/bin/sh
+
+file=$1
+fname=${file%.*}
+
+dir=`dirname $0`
+tmp=`mktemp -d` || exit 1
+
+
+if [ "$#" -ne 1 ] || [ ! -f $1 ]; then
+    name=`basename $0`
+    echo "Usage: $name <result.csv>"
+    exit 1
+fi
+
+db="$tmp/pages.db"
+
+#echo "Using tmp path: $tmp"
+
+sqlite3 -csv -separator ';' $db ".import $file pages"
+
+sqlite3 -header -csv -separator ';' $db 'SELECT source, url FROM pages WHERE code=404' > $tmp/404.csv
+sqlite3 -header -csv -separator ';' $db 'SELECT code, url, redirect, source FROM pages WHERE code IN (301,302)' > $tmp/redirect.csv
+sqlite3 -header -csv -separator ';' $db 'SELECT code, url, source FROM pages WHERE code <> 404 AND code >= 400' > $tmp/errors.csv
+
+for f in title h1 description; do
+    query="SELECT a.url, a.$f, a.source FROM pages a JOIN (SELECT $f FROM pages WHERE code=200 AND $f <> '' GROUP BY $f HAVING COUNT(ROWID) > 1) b WHERE a.$f = b.$f ORDER BY a.$f"
+    sqlite3 -header -csv -separator ';' $db "$query" > $tmp/dup.$f.csv
+    sqlite3 -header -csv -separator ';' $db "SELECT url, $f FROM pages WHERE code=200 AND $f = '' " > $tmp/empty.$f.csv
+done
+
+$dir/csv2xlsx -o $fname.xlsx \
+    -s "404" \
+    -s "Redirects" \
+    -s "HTTP Errors" \
+    -s "title duplicates" \
+    -s "H1 duplicates" \
+    -s "description duplicates" \
+    -s "Empty title" \
+    -s "Empty H1" \
+    -s "Empty description" \
+    $tmp/404.csv \
+    $tmp/redirect.csv \
+    $tmp/errors.csv \
+    $tmp/dup.title.csv \
+    $tmp/dup.h1.csv \
+    $tmp/dup.description.csv \
+    $tmp/empty.title.csv \
+    $tmp/empty.h1.csv \
+    $tmp/empty.description.csv 
+
+rm -rd $tmp
